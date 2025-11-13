@@ -1,0 +1,125 @@
+---
+title: "WK6_CW"
+output: html_document
+date: "2025-11-11"
+---
+
+#Week 6 Practical [CW] - Detecting Spatial Patterns. 
+
+```{r}
+
+#Installing and loading relevant packages, and data.
+
+library(spatstat)
+library(here)
+library(sf)
+library(tmaptools)
+library(sp)
+library(tmap)
+
+#Reading in the London Borough data.
+BoroughData <- st_read(file.choose()) %>% 
+  st_transform(., 27700)
+
+#Reading in the Blue Plaques data.
+BluePlaques <- st_read("https://s3.eu-west-2.amazonaws.com/openplaques/open-plaques-london-2018-04-08.geojson")
+
+```
+```{r}
+
+#Quick visualisation, cleaning and processing.
+
+tmap_mode("plot")
+
+tm_shape(BoroughData) +
+  tm_polygons(fill_alpha = 0.5) +
+tm_shape(BluePlaques) +
+  tm_bubbles(fill = "black", size=0.05)
+
+library(tidyverse)
+BluePlaques <- distinct(BluePlaques) %>% 
+  st_transform(., 27700)
+
+BluePlaques <- BluePlaques[BoroughData,]
+
+Camden <- BoroughData %>% 
+  filter(., NAME=="Camden") %>% 
+  st_transform(., 27700)
+
+CamdenPlaques <- BluePlaques %>% 
+  st_filter(Camden)
+
+tm_shape(Camden) +
+  tm_polygons(fill_alpha = 0.5) +
+tm_shape(CamdenPlaques) +
+  tm_bubbles(fill = "black", size=0.1)
+
+```
+
+```{r}
+
+#Point Pattern Analysis
+
+
+
+#Establising the Observation Window.
+
+ObsWindow <- as.owin(Camden)
+plot(ObsWindow)
+
+#Converts the modern sf object into an older SpatialPointsDataFrame from the sp package. 
+
+CamdenPlaques <- CamdenPlaques %>% 
+  as(., "Spatial")
+
+#Creates a Planer Point Pattern (ppp) object using the X and Y coordinates from the sp object (+ set obs window)
+
+CamdenPlaques.ppp <- ppp(x = CamdenPlaques@coords[,1],
+                         y = CamdenPlaques@coords[,2],
+                         window = ObsWindow)
+
+#Kernel Density Estimation - sigma sets kernel size (for BNG that is m. 100m produces smaller clusters than 500m)
+
+CamdenPlaques.ppp %>% 
+  density(., sigma=600) %>% 
+  plot()
+
+
+
+#Quadrat Analysis - simple test for complete spatial randomness (CSR)
+
+plot(CamdenPlaques.ppp,
+     pch=16,
+     cex=0.5,
+     main= "Quadrat Analysis - Blue Plaques in Camden")
+
+CamdenPlaques.ppp %>% 
+  quadratcount(.,nx = 6, ny = 6) %>% 
+  plot(., add=T, col="blue")
+
+#Adding the observed results to a table.
+
+QuadratTable <- CamdenPlaques.ppp %>% 
+  quadratcount(., nx = 6, ny = 6) %>% 
+  as.data.frame() %>% 
+  dplyr::count(Var1=Freq) %>% 
+  dplyr::rename(Freqquadratcount = n)
+
+#Generating the expected values and adding them to QuadratTable.
+
+QuadratTable <- QuadratTable %>% 
+  mutate(TotalP = Plaques_in_Quadrat * Count_Times_Obs) %>% 
+  dplyr::summarise(across(everything(), sum)) %>% 
+  dplyr:: select(-Plaques_in_Quadrat)
+  
+
+
+
+mutate(TotalP = Var1)
+
+
+
+```
+
+
+
