@@ -58,7 +58,7 @@ tm_shape(CamdenPlaques) +
 
 ```{r}
 
-#Point Pattern Analysis
+#Initial Point Pattern Analysis - Quadrat Analysis.
 
 
 
@@ -102,24 +102,127 @@ CamdenPlaques.ppp %>%
 QuadratTable <- CamdenPlaques.ppp %>% 
   quadratcount(., nx = 6, ny = 6) %>% 
   as.data.frame() %>% 
-  dplyr::count(Var1=Freq) %>% 
-  dplyr::rename(Freqquadratcount = n)
+  dplyr::count(Plaques_in_Quadrat=Freq) %>% 
+  dplyr::rename(Count_Times_Obs = n)
 
 #Generating the expected values and adding them to QuadratTable.
 
-QuadratTable <- QuadratTable %>% 
+Sums <- QuadratTable %>% 
   mutate(TotalP = Plaques_in_Quadrat * Count_Times_Obs) %>% 
   dplyr::summarise(across(everything(), sum)) %>% 
   dplyr:: select(-Plaques_in_Quadrat)
-  
+
+Lambda <- QuadratTable %>% 
+  mutate(TotalP = Plaques_in_Quadrat * Count_Times_Obs) %>% 
+  dplyr::summarise(across(everything(), sum)) %>% 
+  mutate(Lambda = TotalP / Count_Times_Obs) %>% 
+  dplyr::select(Lambda) %>% 
+  pull(Lambda)
+
+QuadratTable2 <- QuadratTable %>% 
+  mutate(Pr=((Lambda^Plaques_in_Quadrat)*exp(-Lambda))/factorial(Plaques_in_Quadrat)) %>% 
+  mutate(Expected = (round(Pr * Sums$Count_Times_Obs, 0)))
 
 
+#Comparing the frequency distributions (observed vs. expected results)
 
-mutate(TotalP = Var1)
+plot(c(1,15), c(0,5), type="n",
+     xlab="Number of Blue Plaques in Camden [R=Obs, B=Exp]", ylab="Frequency of Occurences")
+points(QuadratTable2$Count_Times_Obs,
+       col="red",
+       type="o",
+       lwd=3)
+points(QuadratTable2$Expected,
+       col = "blue",
+       type = "o",
+       lwd = 3)
 
 
+#Statistically checking for Complete Spatial Randomness using quadrat.test() 
+
+CSRTest <- quadrat.test(CamdenPlaques.ppp, nx = 6, my = 6)
+
+#Plotting the results of the A) the Quadrat Test and B) the spatstats Chi-Squared test. 
+
+plot(CamdenPlaques.ppp, pch=16, cex=0.5, main = "Blue Plaques in Camden")
+plot(CSRTest, add = T, col = "black")
+
+#Limitations with Quadrat Analysis:
+  # Different grid arrangements influence the results.
 
 ```
 
+```{r}
 
+#More Intuitive Testing - Ripley's K and DBSCAN
+
+
+#Ripley's K test and plot
+
+RK1 <- CamdenPlaques.ppp %>% 
+  Kest(., correction="border") %>% 
+  plot()
+
+library(fpc)
+
+
+#DBSCAN - extracting points (1), running DBSCAN analysis (2) and plotting the results (3)
+
+#(1)
+CamdenPlaquesPoints <- CamdenPlaques %>% 
+  coordinates(.) %>% 
+  as.data.frame()
+
+#(2)
+DBSCAN <- CamdenPlaquesPoints %>% 
+  fpc::dbscan(., eps = 300, MinPts = 4)
+
+#(3)
+plot(DBSCAN, CamdenPlaquesPoints, main = "Camden BP DBSCAN", frame = F)
+plot(Camden$geometry, add = T)
+
+
+#dbscan::kNNdistplot() finds the 'knee' in the plot so as to identify the correct epsilon (distance) to use in the DBSCAN analysis.
+
+CamdenPlaquesPoints %>% 
+  dbscan::kNNdistplot(., k=4)
+
+```
+
+```{r}
+
+#Visualisation in ggplot2.
+
+library(ggplot2)
+
+CamdenPlaquesPoints <- CamdenPlaquesPoints %>% 
+  mutate(DBSCANcluster = DBSCAN$cluster)
+
+
+#Converting the data frame back to sf. 
+
+CamdenPlaquesPoints <- st_as_sf(CamdenPlaquesPoints,
+                                coords = c("coords.x1", "coords.x2"), crs = 27700)
+
+cHullps <- CamdenPlaquesPoints %>% 
+  filter(DBSCANcluster > 0) %>% 
+  group_by(DBSCANcluster) %>% 
+  summarise(geometry = st_combine(geometry)) %>% 
+  mutate(geometry = st_convex_hull(geometry)) %>% 
+  st_as_sf()
+
+
+#Plotting the DBSCAN outputs using ggplot. Both the 
+
+ggplot() +
+  annotation_map_tile(zoom = 13) +
+  geom_sf(data = CamdenPlaquesPoints, aes(colour = DBSCANcluster), size = 2, show.legend = FALSE) +
+  geom_sf(data = cHullps, aes(fill = DBSCANcluster),
+          alpha = 0.6,
+          color = NA,
+          show.legend = FALSE) +
+  theme_bw()
+
+
+```
 
